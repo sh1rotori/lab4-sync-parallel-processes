@@ -1,0 +1,23 @@
+# Binaries and build artifacts
+bin/
+obj/
+*.o
+*.obj
+*.exe
+*.out
+
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*$py.class
+
+# IDE and Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# OS and temporary logs
+*.log
