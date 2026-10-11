@@ -1,0 +1,16 @@
+threads,benchmark,sync_primitive,throughput_ops_sec,latency_ns,duration_sec
+1,counter_increment,Spinlock,88558271.34,11.29,0.0011
+1,counter_increment,Pthread_Mutex,65214555.89,15.33,0.0015
+1,bounded_queue,Mutex+2Condvars,1055781.14,8470.0,0.0474
+2,counter_increment,Spinlock,11976908.52,83.49,0.0167
+2,counter_increment,Pthread_Mutex,2115385.84,472.73,0.0945
+2,bounded_queue,Mutex+2Condvars,550208.45,15940.0,0.1817
+4,counter_increment,Spinlock,20489389.06,48.81,0.0195
+4,counter_increment,Pthread_Mutex,41347515.53,24.19,0.0097
+4,bounded_queue,Mutex+2Condvars,391982.62,30290.0,0.5102
+8,counter_increment,Spinlock,5607644.34,178.33,0.1427
+8,counter_increment,Pthread_Mutex,35231581.59,28.38,0.0227
+8,bounded_queue,Mutex+2Condvars,488525.57,31900.0,0.8188
+16,counter_increment,Spinlock,2169875.19,460.86,0.7374
+16,counter_increment,Pthread_Mutex,23131315.03,43.23,0.0692
+16,bounded_queue,Mutex+2Condvars,457741.95,50990.0,1.7477
