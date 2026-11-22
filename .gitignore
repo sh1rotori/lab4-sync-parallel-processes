@@ -21,3 +21,6 @@ __pycache__/
 
 # OS and temporary logs
 *.log
+
+# Local environment secrets
+.env
