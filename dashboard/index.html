@@ -1,0 +1,1071 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>lab4_sync — Профайлер синхронизации параллельных процессов и Lock-Free структур</title>
+  <script src="/vendor/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --bg: #0b1020;
+      --bg-elev: #121a2e;
+      --bg-card: #16213a;
+      --bg-input: #0e1528;
+      --border: #263556;
+      --text: #e6edf7;
+      --text-muted: #93a4c3;
+      --accent: #38bdf8;
+      --accent-2: #818cf8;
+      --green: #34d399;
+      --amber: #fbbf24;
+      --red: #f87171;
+      --radius: 12px;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      --sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Ubuntu, sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: radial-gradient(circle at top right, #162344 0%, var(--bg) 55%);
+      color: var(--text);
+      font-family: var(--sans);
+      line-height: 1.45;
+      min-height: 100vh;
+    }
+
+    .container {
+      max-width: 1440px;
+      margin: 0 auto;
+      padding: 20px 24px 36px;
+    }
+
+    header.topbar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 16px 20px;
+      background: var(--bg-elev);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      margin-bottom: 18px;
+    }
+
+    .brand h1 {
+      margin: 0;
+      font-size: 1.28rem;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+    }
+
+    .brand p {
+      margin: 3px 0 0;
+      font-size: 0.85rem;
+      color: var(--text-muted);
+    }
+
+    .status-pills {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 6px 12px;
+      border-radius: 999px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      color: var(--text);
+    }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--text-muted);
+    }
+    .dot.ok { background: var(--green); box-shadow: 0 0 8px rgba(52, 211, 153, 0.7); }
+    .dot.warn { background: var(--amber); box-shadow: 0 0 8px rgba(251, 191, 36, 0.6); }
+    .dot.err { background: var(--red); box-shadow: 0 0 8px rgba(248, 113, 113, 0.7); }
+
+    /* KPI Row */
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(220px, 1fr));
+      gap: 14px;
+      margin-bottom: 18px;
+    }
+
+    @media (max-width: 1100px) {
+      .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+    @media (max-width: 640px) {
+      .kpi-grid { grid-template-columns: 1fr; }
+    }
+
+    .kpi-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-left: 4px solid var(--accent);
+      border-radius: var(--radius);
+      padding: 14px 16px;
+    }
+
+    .kpi-card.green { border-left-color: var(--green); }
+    .kpi-card.indigo { border-left-color: var(--accent-2); }
+    .kpi-card.warning { border-left-color: var(--amber); }
+    .kpi-card.danger { border-left-color: var(--red); background: linear-gradient(135deg, rgba(248, 113, 113, 0.1), var(--bg-card)); }
+    .kpi-card.ok { border-left-color: var(--green); }
+
+    .kpi-label {
+      font-size: 0.74rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-muted);
+      font-weight: 700;
+    }
+
+    .kpi-value {
+      font-size: 1.28rem;
+      font-weight: 700;
+      margin: 6px 0 4px;
+    }
+
+    .kpi-sub {
+      font-size: 0.82rem;
+      color: var(--text-muted);
+    }
+
+    /* Charts Grid */
+    .charts-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(300px, 1fr));
+      gap: 16px;
+      margin-bottom: 18px;
+    }
+
+    @media (max-width: 1200px) {
+      .charts-grid { grid-template-columns: 1fr; }
+    }
+
+    .panel {
+      background: var(--bg-elev);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px 18px;
+    }
+
+    .panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+
+    .panel-title {
+      font-size: 0.98rem;
+      font-weight: 700;
+      margin: 0;
+    }
+
+    .panel-sub {
+      font-size: 0.78rem;
+      color: var(--text-muted);
+    }
+
+    .chart-box {
+      position: relative;
+      height: 260px;
+      width: 100%;
+    }
+
+    .btn-ghost {
+      background: var(--bg-card);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 5px 10px;
+      font-size: 0.78rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .btn-ghost:hover { border-color: var(--accent); color: var(--accent); }
+    .btn-ghost.active { background: rgba(56, 189, 248, 0.16); border-color: var(--accent); color: var(--accent); }
+
+    /* Bottom Split: Runner + AI Assistant */
+    .workspace-grid {
+      display: grid;
+      grid-template-columns: 1.05fr 1fr;
+      gap: 16px;
+    }
+    @media (max-width: 1024px) {
+      .workspace-grid { grid-template-columns: 1fr; }
+    }
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+    @media (max-width: 600px) {
+      .form-grid { grid-template-columns: 1fr; }
+    }
+
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px 12px;
+    }
+
+    .field.full { grid-column: 1 / -1; }
+
+    .field-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.82rem;
+      font-weight: 600;
+      color: var(--text-muted);
+    }
+
+    .field-val {
+      color: var(--accent);
+      font-family: var(--mono);
+      font-weight: 700;
+    }
+
+    select, input[type="text"] {
+      background: var(--bg-input);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 9px 11px;
+      font-size: 0.9rem;
+      font-family: inherit;
+      outline: none;
+    }
+    select:focus, input[type="text"]:focus { border-color: var(--accent); }
+
+    input[type="range"] {
+      width: 100%;
+      accent-color: var(--accent);
+      cursor: pointer;
+    }
+
+    .checkbox-row {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      font-size: 0.88rem;
+      cursor: pointer;
+      user-select: none;
+    }
+    .checkbox-row input { width: 16px; height: 16px; accent-color: var(--red); }
+
+    .actions-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #0284c7, #2563eb);
+      color: #ffffff;
+      border: none;
+      border-radius: 9px;
+      padding: 10px 18px;
+      font-size: 0.9rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: transform 0.08s ease, opacity 0.15s ease;
+    }
+    .btn-primary:hover:not(:disabled) { opacity: 0.94; transform: translateY(-1px); }
+    .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .progress-wrap {
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      height: 10px;
+      overflow: hidden;
+      margin-bottom: 8px;
+    }
+
+    .progress-bar {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, var(--accent), var(--green));
+      transition: width 0.25s ease;
+    }
+
+    .run-status-line {
+      font-size: 0.84rem;
+      color: var(--text-muted);
+      margin-bottom: 10px;
+      min-height: 1.2em;
+    }
+
+    .single-result-box {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px 12px;
+      font-size: 0.85rem;
+      margin-bottom: 10px;
+      display: none;
+    }
+
+    details.stdout-box {
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 8px 12px;
+    }
+    details.stdout-box summary {
+      cursor: pointer;
+      font-size: 0.82rem;
+      font-weight: 600;
+      color: var(--text-muted);
+    }
+    pre.stdout-pre {
+      margin: 10px 0 2px;
+      max-height: 220px;
+      overflow: auto;
+      font-family: var(--mono);
+      font-size: 0.78rem;
+      color: #cbd5e1;
+      white-space: pre-wrap;
+    }
+
+    /* AI Chat Panel */
+    .chat-panel {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      min-height: 460px;
+    }
+
+    .quick-prompts {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px;
+      margin-bottom: 12px;
+    }
+
+    .chip {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 999px;
+      padding: 5px 11px;
+      font-size: 0.76rem;
+      cursor: pointer;
+    }
+    .chip:hover { border-color: var(--accent); color: var(--accent); }
+
+    .chat-log {
+      flex: 1;
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px;
+      overflow-y: auto;
+      max-height: 320px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+
+    .msg {
+      padding: 10px 12px;
+      border-radius: 10px;
+      font-size: 0.86rem;
+      max-width: 94%;
+    }
+
+    .msg.user {
+      align-self: flex-end;
+      background: #1d3557;
+      border: 1px solid #2b4c7e;
+    }
+
+    .msg.assistant {
+      align-self: flex-start;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+    }
+
+    .msg-meta {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      margin-bottom: 4px;
+    }
+
+    .mode-tag {
+      padding: 1px 7px;
+      border-radius: 999px;
+      font-weight: 700;
+      font-size: 0.68rem;
+    }
+    .mode-tag.gemini { background: rgba(52, 211, 153, 0.16); color: var(--green); }
+    .mode-tag.offline { background: rgba(251, 191, 36, 0.16); color: var(--amber); }
+
+    .msg-body code {
+      font-family: var(--mono);
+      background: rgba(15, 23, 42, 0.85);
+      padding: 1px 5px;
+      border-radius: 4px;
+      font-size: 0.82em;
+      color: var(--accent);
+    }
+
+    .chat-input-row {
+      display: flex;
+      gap: 8px;
+    }
+    .chat-input-row input { flex: 1; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header class="topbar">
+      <div class="brand">
+        <h1>lab4_sync // Профайлер синхронизации параллельных процессов и Lock-Free структур</h1>
+        <p>POSIX Mutex (Futex) &middot; User-Space Spinlock &middot; Мониторы Месы &middot; Обедающие философы &middot; Очередь Майкла — Скотта</p>
+      </div>
+      <div class="status-pills">
+        <div class="pill"><span class="dot ok"></span><span id="hostInfo">Хост: проверка...</span></div>
+        <div class="pill"><span id="binDot" class="dot warn"></span><span id="binInfo">Бинарники: проверка...</span></div>
+        <div class="pill"><span id="aiDot" class="dot warn"></span><span id="aiStatusBadge">ИИ: проверка...</span></div>
+      </div>
+    </header>
+
+    <!-- KPI Cards -->
+    <section class="kpi-grid">
+      <div class="kpi-card green">
+        <div class="kpi-label">Лидер пропускной способности</div>
+        <div class="kpi-value" id="kpiWinnerVal">--</div>
+        <div class="kpi-sub" id="kpiWinnerSub">Ожидание данных бенчмарка</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Минимальная задержка</div>
+        <div class="kpi-value" id="kpiLatencyVal">--</div>
+        <div class="kpi-sub" id="kpiLatencySub">Ожидание данных бенчмарка</div>
+      </div>
+      <div class="kpi-card indigo">
+        <div class="kpi-label">Ускорение Lock-Free очереди</div>
+        <div class="kpi-value" id="kpiSpeedupVal">--</div>
+        <div class="kpi-sub" id="kpiSpeedupSub">MSQueue против Mutex+2Condvars</div>
+      </div>
+      <div class="kpi-card warning" id="kpiAlertCard">
+        <div class="kpi-label">Узкие места и аномалии</div>
+        <div class="kpi-value" id="kpiAlertVal">--</div>
+        <div class="kpi-sub" id="kpiAlertSub">Анализ масштабирования...</div>
+      </div>
+    </section>
+
+    <!-- Offline Chart.js Visuals -->
+    <section class="charts-grid">
+      <div class="panel">
+        <div class="panel-header">
+          <div>
+            <h2 class="panel-title">Пропускная способность: Spinlock vs Pthread Mutex</h2>
+            <div class="panel-sub">Масштабирование инкремента счётчика (млн оп/с)</div>
+          </div>
+        </div>
+        <div class="chart-box"><canvas id="chartThroughput"></canvas></div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-header">
+          <div>
+            <h2 class="panel-title">Задержка захвата vs Конкуренция потоков</h2>
+            <div class="panel-sub">Среднее время одной операции (нс)</div>
+          </div>
+          <button type="button" class="btn-ghost" id="toggleLogLatency">Лог. шкала: ВЫКЛ</button>
+        </div>
+        <div class="chart-box"><canvas id="chartLatency"></canvas></div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-header">
+          <div>
+            <h2 class="panel-title">Масштабируемость MPMC-очередей</h2>
+            <div class="panel-sub">Lock-Free MSQueue vs Mutex+2Condvars (тыс. оп/с)</div>
+          </div>
+        </div>
+        <div class="chart-box"><canvas id="chartQueue"></canvas></div>
+      </div>
+    </section>
+
+    <!-- Bottom Interactive Controls & AI Diagnostics -->
+    <section class="workspace-grid">
+      <div class="panel">
+        <div class="panel-header">
+          <div>
+            <h2 class="panel-title">Интерактивный запуск бенчмарков</h2>
+            <div class="panel-sub">Локальное выполнение скомпилированных бинарников C11 / C++17</div>
+          </div>
+          <button type="button" class="btn-ghost" id="refreshResultsBtn">Обновить CSV</button>
+        </div>
+
+        <div class="form-grid">
+          <div class="field full">
+            <div class="field-head"><span>Сценарий эксперимента</span></div>
+            <select id="scenarioSelect">
+              <option value="suite">Полный пакет масштабирования (1, 2, 4, 8, 16 потоков &rarr; CSV и графики)</option>
+              <option value="spinlock_test">Spinlock vs Pthread Mutex (spinlock_test)</option>
+              <option value="prod_cons_sync">Producer-Consumer монитор (prod_cons_sync)</option>
+              <option value="aba_demo">Lock-Free MSQueue и проблема ABA (aba_demo)</option>
+              <option value="philosophers">Обедающие философы (philosophers)</option>
+            </select>
+          </div>
+
+          <div class="field" id="threadsField">
+            <div class="field-head"><span>Потоки</span><span class="field-val" id="threadsVal">8</span></div>
+            <input type="range" id="threadsRange" min="1" max="16" step="1" value="8" />
+          </div>
+
+          <div class="field">
+            <div class="field-head"><span>Элементы / Итерации</span><span class="field-val" id="itemsVal">100000</span></div>
+            <input type="range" id="itemsRange" min="10000" max="500000" step="10000" value="100000" />
+          </div>
+
+          <div class="field" id="bufferField">
+            <div class="field-head"><span>Ёмкость кольцевого буфера</span><span class="field-val" id="bufferVal">16</span></div>
+            <input type="range" id="bufferRange" min="4" max="128" step="4" value="16" />
+          </div>
+
+          <div class="field" id="deadlockField" style="display: none; justify-content: center;">
+            <label class="checkbox-row">
+              <input type="checkbox" id="noSyncCheck" />
+              <span>Симулировать Deadlock (<code>--no-sync</code>)</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="actions-row">
+          <button type="button" class="btn-primary" id="runBtn">Запустить тест</button>
+          <span class="panel-sub" id="runHint">Выполняется локально без доступа к сети</span>
+        </div>
+
+        <div class="progress-wrap">
+          <div class="progress-bar" id="progressBar"></div>
+        </div>
+        <div class="run-status-line" id="runStatusLine">Готов к запуску.</div>
+
+        <div class="single-result-box" id="singleResultBox"></div>
+
+        <details class="stdout-box" id="stdoutDetails">
+          <summary>Сырой вывод консоли (C/C++ stdout)</summary>
+          <pre class="stdout-pre" id="stdoutPre">В этой сессии команды ещё не запускались.</pre>
+        </details>
+      </div>
+
+      <div class="panel chat-panel">
+        <div class="panel-header">
+          <div>
+            <h2 class="panel-title">ИИ-ассистент системной диагностики</h2>
+            <div class="panel-sub">Анализ живых метрик CSV и stdout (автопереход в автономный режим без сети)</div>
+          </div>
+        </div>
+
+        <div class="quick-prompts">
+          <button type="button" class="chip" data-q="Почему Spinlock деградирует при 8+ потоках?">Почему Spinlock деградирует?</button>
+          <button type="button" class="chip" data-q="Сравни LockFree_MSQueue и Mutex+2Condvars по текущим замерам.">MSQueue против Mutex</button>
+          <button type="button" class="chip" data-q="Определи главные узкие места в текущих результатах.">Главные узкие места</button>
+          <button type="button" class="chip" data-q="Объясни причину Deadlock у обедающих философов и иерархию Дейкстры.">Deadlock у философов</button>
+        </div>
+
+        <div class="chat-log" id="chatLog">
+          <div class="msg assistant">
+            <div class="msg-meta">
+              <span>Движок диагностики</span>
+              <span class="mode-tag offline" id="welcomeModeTag">Готов</span>
+            </div>
+            <div class="msg-body">
+              Задайте вопрос о точках перегиба конкуренции, cache-line bouncing (MESI), пробуждении Futex, масштабировании Lock-Free MSQueue или дедлоках обедающих философов. Ответы опираются на актуальные метрики из <code>data.csv</code>.
+            </div>
+          </div>
+        </div>
+
+        <form class="chat-input-row" id="chatForm">
+          <input type="text" id="chatInput" placeholder="Спросите об узких местах, скачках задержки или примитивах..." autocomplete="off" />
+          <button type="submit" class="btn-primary" id="chatSendBtn">Спросить</button>
+        </form>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    (function () {
+      const state = {
+        latencyLog: false,
+        charts: { throughput: null, latency: null, queue: null },
+        lastResults: null,
+        pollTimer: null,
+        history: [],
+      };
+
+      const el = (id) => document.getElementById(id);
+
+      function escapeHtml(str) {
+        return String(str)
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;")
+          .replace(/'/g, "&#39;");
+      }
+
+      function formatSimpleMarkdown(text) {
+        let html = escapeHtml(text);
+        html = html.replace(/`([^`]+)`/g, "<code>$1</code>");
+        html = html.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+        html = html.replace(/\n/g, "<br>");
+        return html;
+      }
+
+      function fmtOps(ops) {
+        if (ops >= 1e6) return (ops / 1e6).toFixed(2) + " млн оп/с";
+        if (ops >= 1e3) return (ops / 1e3).toFixed(1) + " тыс. оп/с";
+        return ops.toFixed(0) + " оп/с";
+      }
+
+      function fmtLatency(ns) {
+        if (ns >= 1e6) return (ns / 1e6).toFixed(2) + " мс";
+        if (ns >= 1e3) return (ns / 1e3).toFixed(2) + " мкс";
+        return ns.toFixed(1) + " нс";
+      }
+
+      async function fetchJson(url, options) {
+        const resp = await fetch(url, options);
+        const data = await resp.json();
+        if (!resp.ok) {
+          throw new Error(data.error || ("Ошибка HTTP " + resp.status));
+        }
+        return data;
+      }
+
+      function benchNameRu(name) {
+        const labels = {
+          counter_increment: "инкремент счётчика",
+          bounded_queue: "ограниченный буфер",
+          lockfree_queue: "lock-free очередь",
+          dining_philosophers: "обедающие философы",
+        };
+        return labels[name] || name;
+      }
+
+      async function loadHealth() {
+        try {
+          const data = await fetchJson("/api/health");
+          el("hostInfo").textContent = `${data.os} ${data.arch} · ${data.cpu_count} ядер CPU`;
+
+          const bins = data.binaries || {};
+          const total = Object.keys(bins).length;
+          const ready = Object.values(bins).filter(Boolean).length;
+          el("binInfo").textContent = `Бинарники: ${ready}/${total} готовы`;
+          el("binDot").className = "dot " + (ready === total ? "ok" : "warn");
+
+          if (data.ai_mode === "gemini") {
+            el("aiStatusBadge").textContent = "ИИ: Gemini Онлайн";
+            el("aiDot").className = "dot ok";
+            el("welcomeModeTag").textContent = "Gemini Онлайн";
+            el("welcomeModeTag").className = "mode-tag gemini";
+          } else {
+            el("aiStatusBadge").textContent = "ИИ: Автономный режим";
+            el("aiDot").className = "dot warn";
+            el("welcomeModeTag").textContent = "Автономный режим";
+            el("welcomeModeTag").className = "mode-tag offline";
+          }
+        } catch (err) {
+          el("hostInfo").textContent = "Сервер недоступен";
+          el("binDot").className = "dot err";
+        }
+      }
+
+      function updateKpis(kpis) {
+        const win = kpis.throughput_winner;
+        if (win) {
+          el("kpiWinnerVal").textContent = `${win.primitive} (${fmtOps(win.throughput_ops_sec)})`;
+          el("kpiWinnerSub").textContent = `${win.threads} поток(ов) · ${benchNameRu(win.benchmark)}`;
+        }
+
+        const lat = kpis.lowest_latency;
+        if (lat) {
+          el("kpiLatencyVal").textContent = `${lat.primitive} (${fmtLatency(lat.latency_ns)})`;
+          el("kpiLatencySub").textContent = `${lat.threads} поток(ов) · ${benchNameRu(lat.benchmark)}`;
+        }
+
+        const spd = kpis.msqueue_speedup;
+        if (spd) {
+          el("kpiSpeedupVal").textContent = `В ${spd.ratio}x быстрее`;
+          el("kpiSpeedupSub").textContent =
+            `При ${spd.threads}T: ${fmtOps(spd.msqueue_ops_sec)} против ${fmtOps(spd.blocking_ops_sec)}`;
+        }
+
+        const alert = kpis.bottleneck_alert || {};
+        el("kpiAlertVal").textContent = alert.title || "--";
+        el("kpiAlertSub").textContent = alert.detail || "";
+        const card = el("kpiAlertCard");
+        card.className = "kpi-card " + (alert.severity || "warning");
+      }
+
+      function buildChartConfig(titleY, labels, datasets, logScale) {
+        return {
+          type: "line",
+          data: { labels, datasets },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: "index", intersect: false },
+            plugins: {
+              legend: {
+                labels: { color: "#cbd5e1", boxWidth: 12, font: { size: 11 } },
+              },
+              tooltip: {
+                callbacks: {
+                  title: (items) => items.length ? `Потоков: ${items[0].label}` : "",
+                },
+              },
+            },
+            scales: {
+              x: {
+                title: { display: true, text: "Потоки", color: "#93a4c3" },
+                ticks: { color: "#93a4c3" },
+                grid: { color: "rgba(148, 163, 184, 0.12)" },
+              },
+              y: {
+                type: logScale ? "logarithmic" : "linear",
+                title: { display: true, text: titleY, color: "#93a4c3" },
+                ticks: { color: "#93a4c3" },
+                grid: { color: "rgba(148, 163, 184, 0.12)" },
+              },
+            },
+          },
+        };
+      }
+
+      function renderCharts(series) {
+        if (typeof Chart === "undefined") {
+          return;
+        }
+        const spin = series["Spinlock"] || [];
+        const mutex = series["Pthread_Mutex"] || [];
+        const pc = series["Mutex+2Condvars"] || [];
+        const msq = series["LockFree_MSQueue"] || [];
+
+        const smThreads = Array.from(
+          new Set([...spin.map((r) => r.threads), ...mutex.map((r) => r.threads)])
+        ).sort((a, b) => a - b);
+
+        const mapByT = (arr) => Object.fromEntries(arr.map((r) => [r.threads, r]));
+        const spinMap = mapByT(spin);
+        const mutexMap = mapByT(mutex);
+
+        // 1. Throughput
+        if (state.charts.throughput) state.charts.throughput.destroy();
+        state.charts.throughput = new Chart(
+          el("chartThroughput"),
+          buildChartConfig(
+            "Пропускная способность (млн оп/с)",
+            smThreads,
+            [
+              {
+                label: "Spinlock",
+                data: smThreads.map((t) => spinMap[t] ? +(spinMap[t].throughput_ops_sec / 1e6).toFixed(3) : null),
+                borderColor: "#f87171",
+                backgroundColor: "rgba(248, 113, 113, 0.2)",
+                borderWidth: 2.5,
+                tension: 0.2,
+              },
+              {
+                label: "Pthread_Mutex (Futex)",
+                data: smThreads.map((t) => mutexMap[t] ? +(mutexMap[t].throughput_ops_sec / 1e6).toFixed(3) : null),
+                borderColor: "#38bdf8",
+                backgroundColor: "rgba(56, 189, 248, 0.2)",
+                borderWidth: 2.5,
+                tension: 0.2,
+              },
+            ],
+            false
+          )
+        );
+
+        // 2. Latency
+        if (state.charts.latency) state.charts.latency.destroy();
+        state.charts.latency = new Chart(
+          el("chartLatency"),
+          buildChartConfig(
+            state.latencyLog ? "Задержка (нс, лог.)" : "Задержка (нс)",
+            smThreads,
+            [
+              {
+                label: "Spinlock (нс)",
+                data: smThreads.map((t) => spinMap[t] ? spinMap[t].latency_ns : null),
+                borderColor: "#fbbf24",
+                backgroundColor: "rgba(251, 191, 36, 0.2)",
+                borderWidth: 2.5,
+                tension: 0.2,
+              },
+              {
+                label: "Pthread_Mutex (нс)",
+                data: smThreads.map((t) => mutexMap[t] ? mutexMap[t].latency_ns : null),
+                borderColor: "#34d399",
+                backgroundColor: "rgba(52, 211, 153, 0.2)",
+                borderWidth: 2.5,
+                tension: 0.2,
+              },
+            ],
+            state.latencyLog
+          )
+        );
+
+        // 3. Queue Contention
+        const qThreads = Array.from(
+          new Set([...pc.map((r) => r.threads), ...msq.map((r) => r.threads)])
+        ).sort((a, b) => a - b);
+        const pcMap = mapByT(pc);
+        const msqMap = mapByT(msq);
+
+        if (state.charts.queue) state.charts.queue.destroy();
+        state.charts.queue = new Chart(
+          el("chartQueue"),
+          buildChartConfig(
+            "Пропускная способность (тыс. оп/с)",
+            qThreads,
+            [
+              {
+                label: "Mutex+2Condvars",
+                data: qThreads.map((t) => pcMap[t] ? +(pcMap[t].throughput_ops_sec / 1e3).toFixed(2) : null),
+                borderColor: "#34d399",
+                backgroundColor: "rgba(52, 211, 153, 0.2)",
+                borderWidth: 2.5,
+                tension: 0.2,
+              },
+              {
+                label: "LockFree_MSQueue",
+                data: qThreads.map((t) => msqMap[t] ? +(msqMap[t].throughput_ops_sec / 1e3).toFixed(2) : null),
+                borderColor: "#818cf8",
+                backgroundColor: "rgba(129, 140, 248, 0.2)",
+                borderWidth: 2.5,
+                tension: 0.2,
+              },
+            ],
+            false
+          )
+        );
+      }
+
+      async function loadResults() {
+        try {
+          const data = await fetchJson("/api/results");
+          state.lastResults = data;
+          updateKpis(data.kpis || {});
+          renderCharts(data.series || {});
+        } catch (err) {
+          el("runStatusLine").textContent = "Не удалось загрузить результаты: " + err.message;
+        }
+      }
+
+      function syncScenarioFields() {
+        const sc = el("scenarioSelect").value;
+        el("threadsField").style.opacity = sc === "suite" ? "0.45" : "1";
+        el("threadsRange").disabled = sc === "suite";
+        el("bufferField").style.display = (sc === "suite" || sc === "prod_cons_sync") ? "flex" : "none";
+        el("deadlockField").style.display = sc === "philosophers" ? "flex" : "none";
+      }
+
+      function renderSingleRunMetrics(status) {
+        const box = el("singleResultBox");
+        const metrics = status.parsed_metrics || [];
+        if (!metrics.length || status.scenario === "suite") {
+          box.style.display = "none";
+          return;
+        }
+        if (status.scenario === "philosophers") {
+          const p = metrics[0];
+          const badge = p.deadlock_detected
+            ? `<strong style="color: var(--red)">[ОБНАРУЖЕН DEADLOCK]</strong>`
+            : `<strong style="color: var(--green)">Без взаимных блокировок (OK)</strong>`;
+          box.innerHTML = `${badge} &middot; Потоки: <code>${p.threads}</code> &middot; Обеды: <code>${p.completed_meals ?? "?"}</code> &middot; Ср. ожидание: <code>${p.avg_wait_us ?? "?"} мкс</code>`;
+          box.style.display = "block";
+          return;
+        }
+        const rowsHtml = metrics.map((m) =>
+          `<div><strong>${escapeHtml(m.sync_primitive)}</strong> (${m.threads}T) &rarr; <code>${fmtOps(m.throughput_ops_sec)}</code> | Задержка: <code>${fmtLatency(m.latency_ns)}</code> | Время: <code>${m.duration_sec.toFixed(4)} с</code></div>`
+        ).join("");
+        box.innerHTML = rowsHtml;
+        box.style.display = "block";
+      }
+
+      async function pollRunStatus() {
+        try {
+          const st = await fetchJson("/api/run/status");
+          const total = Math.max(1, st.total_steps || 1);
+          const pct = st.running ? Math.min(95, Math.round((st.step / total) * 100)) : 100;
+          el("progressBar").style.width = pct + "%";
+          el("runStatusLine").textContent = st.message || "Выполняется...";
+
+          if (st.raw_stdout) {
+            el("stdoutPre").textContent = st.raw_stdout;
+          }
+
+          if (!st.running) {
+            clearInterval(state.pollTimer);
+            state.pollTimer = null;
+            el("runBtn").disabled = false;
+            if (st.error) {
+              el("runStatusLine").style.color = "var(--red)";
+            } else {
+              el("runStatusLine").style.color = "var(--green)";
+              renderSingleRunMetrics(st);
+              if (st.updated_results) {
+                state.lastResults = st.updated_results;
+                updateKpis(st.updated_results.kpis || {});
+                renderCharts(st.updated_results.series || {});
+              }
+            }
+          }
+        } catch (err) {
+          clearInterval(state.pollTimer);
+          state.pollTimer = null;
+          el("runBtn").disabled = false;
+          el("runStatusLine").textContent = "Ошибка опроса статуса: " + err.message;
+        }
+      }
+
+      async function startBenchmarkRun() {
+        const scenario = el("scenarioSelect").value;
+        const payload = {
+          scenario,
+          threads: parseInt(el("threadsRange").value, 10),
+          items: parseInt(el("itemsRange").value, 10),
+          buffer: parseInt(el("bufferRange").value, 10),
+          no_sync: el("noSyncCheck").checked,
+        };
+
+        el("runBtn").disabled = true;
+        el("runStatusLine").style.color = "var(--text-muted)";
+        el("runStatusLine").textContent = "Отправка задачи...";
+        el("progressBar").style.width = "8%";
+        el("singleResultBox").style.display = "none";
+
+        try {
+          await fetchJson("/api/run", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+          if (state.pollTimer) clearInterval(state.pollTimer);
+          state.pollTimer = setInterval(pollRunStatus, 350);
+          pollRunStatus();
+        } catch (err) {
+          el("runBtn").disabled = false;
+          el("runStatusLine").style.color = "var(--red)";
+          el("runStatusLine").textContent = "Не удалось запустить тест: " + err.message;
+        }
+      }
+
+      function appendChatMessage(role, text, mode, reason) {
+        const log = el("chatLog");
+        const wrapper = document.createElement("div");
+        wrapper.className = "msg " + (role === "user" ? "user" : "assistant");
+
+        if (role === "user") {
+          wrapper.innerHTML = `<div class="msg-meta"><span>Вы</span></div><div class="msg-body">${escapeHtml(text)}</div>`;
+        } else {
+          const isGemini = mode === "gemini";
+          const tagClass = isGemini ? "gemini" : "offline";
+          const tagLabel = isGemini ? "Gemini Онлайн" : "Автономный режим";
+          const metaReason = reason ? `<span>&middot; ${escapeHtml(reason)}</span>` : "";
+          wrapper.innerHTML = `
+            <div class="msg-meta">
+              <span>Движок диагностики</span>
+              <span class="mode-tag ${tagClass}">${tagLabel}</span>
+              ${metaReason}
+            </div>
+            <div class="msg-body">${formatSimpleMarkdown(text)}</div>
+          `;
+        }
+        log.appendChild(wrapper);
+        log.scrollTop = log.scrollHeight;
+      }
+
+      async function sendChatQuestion(question) {
+        const trimmed = question.trim();
+        if (!trimmed) return;
+
+        appendChatMessage("user", trimmed);
+        el("chatInput").value = "";
+        el("chatSendBtn").disabled = true;
+
+        try {
+          const data = await fetchJson("/api/ai/chat", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ question: trimmed, history: state.history }),
+          });
+          appendChatMessage("assistant", data.reply, data.mode, data.reason);
+          state.history.push({ role: "user", text: trimmed });
+          state.history.push({ role: "assistant", text: data.reply });
+        } catch (err) {
+          appendChatMessage("assistant", "Ошибка обращения к локальному серверу: " + err.message, "offline", "Ошибка сервера");
+        } finally {
+          el("chatSendBtn").disabled = false;
+        }
+      }
+
+      // Wire events
+      el("scenarioSelect").addEventListener("change", syncScenarioFields);
+      el("threadsRange").addEventListener("input", (e) => { el("threadsVal").textContent = e.target.value; });
+      el("itemsRange").addEventListener("input", (e) => { el("itemsVal").textContent = e.target.value; });
+      el("bufferRange").addEventListener("input", (e) => { el("bufferVal").textContent = e.target.value; });
+      el("runBtn").addEventListener("click", startBenchmarkRun);
+      el("refreshResultsBtn").addEventListener("click", loadResults);
+
+      el("toggleLogLatency").addEventListener("click", () => {
+        state.latencyLog = !state.latencyLog;
+        const btn = el("toggleLogLatency");
+        btn.textContent = state.latencyLog ? "Лог. шкала: ВКЛ" : "Лог. шкала: ВЫКЛ";
+        btn.classList.toggle("active", state.latencyLog);
+        if (state.lastResults) renderCharts(state.lastResults.series || {});
+      });
+
+      el("chatForm").addEventListener("submit", (e) => {
+        e.preventDefault();
+        sendChatQuestion(el("chatInput").value);
+      });
+
+      document.querySelectorAll(".chip").forEach((btn) => {
+        btn.addEventListener("click", () => sendChatQuestion(btn.getAttribute("data-q")));
+      });
+
+      // Initialize
+      syncScenarioFields();
+      loadHealth();
+      loadResults();
+    })();
+  </script>
+</body>
+</html>
